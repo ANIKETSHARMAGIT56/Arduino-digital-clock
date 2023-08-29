@@ -1,128 +1,115 @@
 #include <Arduino.h>
-// install arduino ide and install the rtclib from library manager
+#include<SPI.h>
 #include "RTClib.h"
-// I AM USING DIRECT PORT MANIPULATION TO SAVE SPACE IN THE MCU BECAUSE WE ONLY HAVE 8KB FLASH IN THE ATMEGA8 CHIP
-// ^^^^RTCLIB IS A LIBRARY WHICH IS USED TO TALK TO THE RTC BOARD
+
 RTC_DS1307 rtc;
-// ^^^^TELL THE LIBRARY THE NAME OF THE RTC CHIP WE WILL USE
-int hourgo(int timer)
-{
-    int ret;
-    if (timer >= 13)
-    {
-        ret=timer - 12;
-    }
-    else
-    {
-        ret = timer;
-    }
-    return ret;
-}
-void display(int number)
-{
-    //the argument with variable name "number" displays a number
-    if (number == 0)
-    {
-        PORTD |= 63;
-    }
-    if (number == 1)
-    {
-        PORTD |= 6;
-    }
-    if (number == 2)
-    {
-        PORTD |= 91;
-    }
-    if (number == 3)
-    {
-        PORTD |= 79;
-    }
-    if (number == 4)
-    {
-        PORTD |= 102;
-    }
-    if (number == 5)
-    {
-        PORTD |= 109;
-    }
-    if (number == 6)
-    {
-        PORTD |= 125;
-    }
-    if (number == 7)
-    {
-        PORTD |= 7;
-    }
-    if (number == 8)
-    {
-        PORTD |= 127;
-    }
-    if (number == 9)
-    {
-        PORTD |= 103;
-    }
-}
+const char numbers[]={
+0B01111110,
+0B00110000,
+0B01101101,
+0B01111001,
+0B00110011,
+0B01011011,
+0B01011111,
+0B01110000,
+0B01111111,
+0B01111011,
+};
 
-void setup()
-{
-    pinMode(A1, OUTPUT);
-    DDRD = 255;
-    DDRB |= 3;
-    if (rtc.isrunning())
-    {
-        // UNCOMMENT THE BELOW LINE TO SET TIME
-//        rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-        // ^^^^WHAT THIS LINE BASICALLY DOES IS THAT IT STORES
-        // THE TIME WHEN THE CODE WAS COMPILED
-        // AND SETS IT TO THE RTC CHIP
-        // this line sets the time every timewhen the code runs
-        // so i advice you to upload this code to set time once
-        // and comment this line
-        // and upload once more
-        // othervise whenever you start your clock it will be stuck to the time when the code was last compiled
-    }
-}
- int pug;
- int puc;
-void loop()
-{
-    DateTime now = rtc.now();
-    pug=hourgo(now.hour());
-    puc=now.minute();
-    int p = puc;
-    int tens = p / 10;
-    int ones = p - tens * 10;
-    digitalWrite(8, 0);
-    digitalWrite(7, 0);
-    digitalWrite(9, 1);
-    display(ones);
-    delay(5);
-    PORTD = 0;
-    digitalWrite(7, 1);
-    digitalWrite(8, 0);
-    digitalWrite(9, 0);
-    display(tens);
+#define DPIN0 16
+#define DPIN1 5
+#define DPIN2 4
+#define DPIN3 0
+#define DPIN4 2
+#define DPIN5 14
+#define DPIN6 12
+#define DPIN7 13
+#define DPIN8 15
 
-    delay(5);
-    PORTD = 0;
-    if(pug>=10){
-    digitalWrite(7, 0);
-    digitalWrite(8, 1);
-    digitalWrite(9, 0);
-    digitalWrite(A1,1);
-    int pun=pug-10;
-    display(pun);
-    delay(5);
-    PORTD = 0;
+
+
+
+
+const byte latch_p= DPIN6;
+const byte clock_p= DPIN7;
+const byte data_p = DPIN8;
+
+const byte display_place[4]={DPIN5,DPIN4,DPIN3,DPIN0};
+const int SSpin = 12;
+
+
+void setup() {
+#ifndef ESP8266
+  while (!Serial); // wait for serial port to connect. Needed for native USB
+#endif
+  if (! rtc.begin()) {
+    Serial.println("Couldn't find RTC");
+    Serial.flush();
+    while (1) delay(10);
+  }
+  //   pinMode(SSpin, OUTPUT);
+  // SPI.begin();
+  	
+  pinMode(latch_p, OUTPUT);
+  pinMode(clock_p, OUTPUT);
+  pinMode(data_p, OUTPUT);
+  pinMode(display_place[0], OUTPUT);
+  pinMode(display_place[1], OUTPUT);
+  pinMode(display_place[2], OUTPUT);
+  pinMode(display_place[3], OUTPUT);
+
+
+}
+int toggle_display(int number,int clear){
+  if (clear==1){
+    for (int i = 0; i < 4; i++)
+    {
+      digitalWrite(display_place[i],HIGH);
+    }
+    return 0;
+  }
+  for (int i = 0; i < 4; i++)
+  {
+    if (i==number)
+    {
+    digitalWrite(display_place[i],LOW);
+      /* code */
+    }
+    else{
+      digitalWrite(display_place[i],HIGH);
     }
     
-    if(pug<=9){
-    digitalWrite(7, 0);
-    digitalWrite(8, 1);
-    digitalWrite(9, 0);
-    digitalWrite(A1,0);
-    display(pug);
-    delay(5);
-    PORTD = 0;
-    }
+  }
+   return 0;
+  
 }
+
+void display_no(int number , int display){
+  toggle_display(display,1);
+    digitalWrite(latch_p,0);
+  shiftOut(data_p,clock_p,LSBFIRST,numbers[number]);
+  digitalWrite(latch_p,1);
+  toggle_display(display,0);
+
+}
+int i=5;
+void display_buffer(int * buf,int del){
+  display_no(*buf,3);
+  delay(del);
+  display_no(*(buf+1),2);
+  delay(del);
+  display_no(*(buf+2),1);
+  delay(del);
+  display_no(*(buf+3),0);
+  delay(del);
+}
+void loop() {
+  DateTime now = rtc.now();
+  int buff[4]={(now.hour()-(now.hour()%10))/10,(now.hour()%10),(now.minute()-(now.minute()%10))/10,(now.minute()%10)};
+display_buffer(&buff[0],5);
+
+}
+
+
+
+ 
